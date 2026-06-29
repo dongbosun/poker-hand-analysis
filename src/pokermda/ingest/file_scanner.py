@@ -12,8 +12,10 @@ from pokermda.utils.hashing import sha256_file
 @dataclass(frozen=True, slots=True)
 class HandHistoryFile:
     path: Path
+    realpath: Path
     file_hash: str
     file_size_bytes: int
+    modified_time_ns: int
     modified_time: str
 
 
@@ -31,8 +33,10 @@ def scan_hand_history_files(root: Path, pattern: str = "*.txt") -> list[HandHist
         records.append(
             HandHistoryFile(
                 path=path,
+                realpath=path.resolve(),
                 file_hash=sha256_file(path),
                 file_size_bytes=stat.st_size,
+                modified_time_ns=stat.st_mtime_ns,
                 modified_time=modified,
             )
         )
@@ -44,4 +48,3 @@ def read_text_with_fallback(path: Path, encoding: str = "utf-8", fallback: str =
         return path.read_text(encoding=encoding)
     except UnicodeDecodeError:
         return path.read_text(encoding=fallback)
-

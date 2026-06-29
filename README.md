@@ -2,6 +2,8 @@
 
 一个面向 Bovada hand history 的本地扑克复盘与玩家池分析项目。第一版目标是把原始手牌安全地导入本地 DuckDB，建立可追踪的复盘队列，导出经过脱敏的 GTOWizard 手牌，并为后续 MDA、node 统计、range 聚合留下清晰扩展点。
 
+当前阶段优先级：NL10 阶段先服务自己的手牌复盘，然后是自己的 stats，再到玩家池 stats，最后才是 node-lock 剥削和自动挖掘。DuckDB 本地数据库是 source of truth；GTOWizard 是外部分析器，不是本项目的数据主库。
+
 ## 核心原则
 
 - **不修改 Bovada 原始目录**：不会移动、重命名、删除，也不会在原始目录旁边写 sidecar 文件。
@@ -10,6 +12,8 @@
 - **增量导入**：通过本项目自己的 DuckDB import ledger 记录文件 hash、路径、状态和导入时间。
 - **手牌去重**：同一文件不会重复导入；同一手牌重复出现在不同文件里时，主表按 hand id/hash 去重。
 - **GTOWizard 本地导出**：第一版不假设 GTOWizard API 存在，只生成本地脱敏 hand history 和 manifest，供手动上传和手动标记结果。
+- **分析单位分层**：hand 不是唯一分析单位；`participants`、`actions`、`decision_instances` 才是 MDA 和 node 统计的核心。
+- **fully-revealed 数据只留本地**：Bovada 的对手 hole cards 可以用于本地玩家池 MDA，但导出 GTOWizard 时必须 sanitize。
 
 ## 项目结构
 
@@ -120,7 +124,8 @@ dataset/
 ## 导入流程
 
 ```bash
-pokermda ingest
+pokermda scan-raw
+pokermda ingest --new-only
 ```
 
 导入行为：
@@ -129,7 +134,7 @@ pokermda ingest
 2. 对每个文件计算 SHA-256。
 3. 查询 DuckDB import ledger。
 4. 已成功导入过的文件 hash 会跳过，同时记录当前路径为 duplicate/skipped。
-5. 新文件会拆分成 hand block，写入 `bronze_raw_hand_blocks`。
+5. 新文件会拆分成 hand block，写入 `raw_hand_blocks`。
 6. parser 尝试生成 `hands`、`participants`、`actions`。
 7. 解析失败不会终止导入，会写入 `parse_errors` 并继续处理后续手牌。
 
@@ -139,6 +144,8 @@ pokermda ingest
 pokermda ingest --limit-files 20
 pokermda ingest --source-dir "/Users/dongbosun/Bovada.lv Poker/Hand History"
 ```
+
+`pokermda scan-raw --dry-run` 只扫描和计算 hash，不写 ledger，也不修改 Bovada 原始目录。
 
 ## 数据库基本信息
 
@@ -182,28 +189,63 @@ pokermda stats summary --json
 
 推荐日常流程：
 
-1. 在 Bovada 客户端导出所有 hands。
-2. 在本项目运行：
+Step 0：在 Bovada 客户端/网页导出 hand history，确认文件出现在：
 
-```bash
-pokermda ingest
+```text
+/Users/dongbosun/Bovada.lv Poker/Hand History
 ```
 
-3. 生成或更新复盘队列：
+Step 1：扫描原始目录。
 
 ```bash
-pokermda queue build --limit 50
-pokermda queue list
+make scan
 ```
 
-4. 导出待研究手牌到 GTOWizard：
+Step 2：增量入库。
 
 ```bash
-pokermda gtowizard export --limit 20
+make ingest
 ```
 
-5. 打开 `dataset/exports/gtowizard/`，手动上传脱敏后的 txt 到 GTOWizard。
-6. 学习后把结果、截图、笔记放到：
+Step 3：生成当天复盘队列。
+
+```bash
+make queue-review
+```
+
+Step 4：导出 GTOWizard 文件。
+
+```bash
+make export-gtowizard
+```
+
+Step 5：手动打开 GTOWizard，上传命令输出中的：
+
+```text
+dataset/exports/gtowizard/<batch>/hands_gtowizard.txt
+```
+
+Step 6：上传后本地标记：
+
+```bash
+pokermda gtow mark-uploaded --batch <batch_id>
+```
+
+Step 7：GTOWizard 分析完成后本地标记：
+
+```bash
+pokermda gtow mark-analyzed --batch <batch_id> --status analyzed
+```
+
+Step 8：在 GTOWizard 里按 EV loss 排序复盘。
+
+Step 9：复盘完每手牌后本地记录：
+
+```bash
+pokermda review mark-done --hand-id <hand_id> --tag river_bluffcatch --note "..."
+```
+
+截图、笔记和手动结果可以放在：
 
 ```text
 dataset/review/gtowizard_manual_results/
@@ -211,13 +253,13 @@ dataset/review/screenshots/
 dataset/review/notes/
 ```
 
-7. 手动标记导出结果：
+也可以跑一键本地流程：
 
 ```bash
-pokermda gtowizard mark --export-id EXPORT_ID --status reviewed --notes "river call too loose"
+pokermda daily
 ```
 
-8. 后续 MDA 和 node 分析会读取同一个 DuckDB，不需要重新解析原始文件。
+`daily` 不会上传任何外部服务，也不会跑耗时的全库 node mining。
 
 ## GTOWizard 脱敏导出
 
@@ -227,7 +269,26 @@ pokermda gtowizard mark --export-id EXPORT_ID --status reviewed --notes "river c
 - 对玩家名做稳定匿名化：`Hero`、`Villain1`、`Villain2` 等。
 - 去掉或隐藏非 hero 的 hole cards。
 - 去掉 summary 中可能泄露完整摊牌信息的行。
-- 生成 `manifest.json`，记录导出时间、hand id、sanitizer version、源 hand hash，不包含完整原文。
+- 生成 `hands_gtowizard.txt`、`manifest.csv` 和 `manifest.json`。
+- `manifest.csv` 包含 `hand_id`、`original_site_hand_no`、`exported_hand_no`、offset、hash 等字段，便于手动上传后回填结果。
+- 如果某手后续无法被 GTOWizard 识别，应在本地用 `gtow add-result` 或 batch mark 命令记录 unsupported / duplicate / error。
+
+第一版不调用 GTOWizard API。建议先用 20-50 手牌测试 GTOWizard 解析效果，人工检查格式，再扩大导出规模。
+
+## 数据库设计
+
+- `import_files`：文件级 import ledger。按 sha256 和路径记录 discovered/importing/imported/partial/error/skipped_duplicate。
+- `raw_hand_blocks`：bronze 层。保存 txt 中切出的原始 hand block，解析失败也保留。
+- `hands`：每手牌公共信息，一手一行。
+- `participants`：每手牌每个座位一行。6-max 一手通常有 6 行 participants；Bovada fully-revealed 的本地 MDA 价值主要在这里。
+- `actions`：每个真实动作一行，带 participant_id、street、全局动作序号和 street 内序号。
+- `player_hand_facts`：玩家视角 summary 和 line key，后续用于 stats 和 review scorer。
+- `decision_instances`：gold 层核心事实表，每个玩家每次面临决策机会一行。
+- `review_candidates` / `study_queue`：本地评分候选和每天复盘入口。
+- `gtowizard_export_batches` / `gtowizard_export_hands` / `gtowizard_review_results`：GTOWizard 手动上传和结果追踪。
+- `node_definitions` / `node_instances` / `node_aggregates` / `range_aggregates`：后续 MDA、node 和 range heatmap 基础。
+
+公共牌面、桌名、按钮位等公共事实只存在 `hands`；玩家私有信息存在 `participants`；动作序列存在 `actions`；决策机会和 node 归属再进入 gold 表。这样不会把同一手公共信息复制 6 份。
 
 ## Node 与 MDA 扩展
 
@@ -238,6 +299,8 @@ pokermda gtowizard mark --export-id EXPORT_ID --status reviewed --notes "river c
 - turn barrel response
 
 未来可以通过 YAML 定义 node 条件，再由 `pokermda nodes` 子命令加载、查询、聚合和导出。第一版保留 schema、模块和 CLI 占位，不强行实现复杂 poker edge cases。
+
+node 是一个可重复统计的局面定义，例如“flop c-bet 后防守方响应”或“river 面对 125% pot overbet”。`node_definitions/*.yaml` 描述过滤条件；`node_instances` 记录哪些 decision 命中了 node；`node_aggregates` 聚合 fold/call/raise/bet 频率；`range_aggregates` 以后用于 13x13 hand class heatmap。第一阶段不做复杂 node lock，先积累可靠数据。
 
 ## 测试
 
@@ -260,3 +323,46 @@ make test
 - Parser 初版只覆盖高频结构，遇到未知格式要写 parse error，不要崩溃。
 - 新增表时同步更新 `src/pokermda/db/schema.sql` 和 README。
 - 新增用户可执行功能时同步更新 CLI、README 和测试。
+
+## 常用命令
+
+```bash
+make setup
+make test
+make init
+make scan
+make ingest
+make status
+make queue-review
+make export-gtowizard
+make daily
+
+pokermda scan-raw --dry-run
+pokermda status imports
+pokermda stats summary
+pokermda profile --json
+pokermda gtow batches
+pokermda gtow mark-uploaded --batch <batch_id>
+pokermda gtow mark-analyzed --batch <batch_id>
+pokermda gtow add-result --hand-id <hand_id> --ev-loss-bb 0.42 --label mistake
+pokermda review todo
+pokermda review mark-done --hand-id <hand_id> --tag cbet --note "..."
+```
+
+## Troubleshooting
+
+- DuckDB 初始化失败：确认 `dataset/db/` 可写，或删除/备份损坏的 `dataset/db/poker.duckdb` 后重新 `pokermda init`。
+- symlink 失败：不影响导入，配置里的 `bovada_raw_hand_history_dir` 会直接指向原始目录。
+- 路径有中文、空格或 `$`：YAML 里用引号；代码内部统一用 `pathlib.Path`。
+- 解析失败：原始 block 仍在 `raw_hand_blocks`，错误在 `parse_errors`；不会丢手牌。
+- 重复导入：按 sha256 和 raw hand hash 去重；重复文件会被 skipped_duplicate 或 imported hash 跳过。
+- 重复导出：`gtowizard_export_hands` 会记录已经导出的 hand；需要重导时可指定单手或清理本地 ignored 数据库。
+- GTOWizard 不识别某些手牌：先在 `manifest.csv` 中定位 hand，再用 `gtow add-result` 标记 unsupported / format_error，并保留样本用于 exporter 测试。
+
+## Roadmap
+
+- Phase 1：文件扫描、ledger、hand block split、基础 parser、GTOW export tracking。
+- Phase 2：更完整 Bovada parser、participants/actions/line_builder、review scorer。
+- Phase 3：hero stats、daily/weekly report。
+- Phase 4：pool MDA、decision_instances、range heatmap。
+- Phase 5：node mining、strategy exploit candidate。

@@ -42,7 +42,7 @@ def build_database_profile(
     imported_hashes = {
         row[0]
         for row in connection.execute(
-            "SELECT DISTINCT file_hash FROM import_files WHERE status = 'imported'"
+            "SELECT DISTINCT sha256 FROM import_files WHERE status = 'imported'"
         ).fetchall()
     }
     status_counts = {
@@ -59,8 +59,8 @@ def build_database_profile(
         duckdb_path=str(settings.duckdb_path),
         bovada_raw_hand_history_dir=str(raw_dir),
         hands_in_database=_count(connection, "hands"),
-        bronze_raw_hand_blocks=_count(connection, "bronze_raw_hand_blocks"),
-        parsed_raw_hand_blocks=_count_where(connection, "bronze_raw_hand_blocks", "parse_status = 'parsed'"),
+        bronze_raw_hand_blocks=_count(connection, "raw_hand_blocks"),
+        parsed_raw_hand_blocks=_count_where(connection, "raw_hand_blocks", "parse_status = 'parsed'"),
         parse_errors=_count(connection, "parse_errors"),
         raw_bovada_files=len(raw_files),
         raw_bovada_unique_file_hashes=len(raw_hashes),
@@ -69,7 +69,7 @@ def build_database_profile(
         ledger_file_paths=sum(status_counts.values()),
         ledger_imported_file_paths=status_counts.get("imported", 0),
         ledger_skipped_duplicate_file_paths=status_counts.get("skipped_duplicate", 0),
-        ledger_failed_file_paths=status_counts.get("failed", 0),
+        ledger_failed_file_paths=status_counts.get("error", 0) + status_counts.get("failed", 0),
     )
 
 
@@ -79,4 +79,3 @@ def _count(connection, table_name: str) -> int:
 
 def _count_where(connection, table_name: str, where_sql: str) -> int:
     return int(connection.execute(f"SELECT COUNT(*) FROM {table_name} WHERE {where_sql}").fetchone()[0])
-

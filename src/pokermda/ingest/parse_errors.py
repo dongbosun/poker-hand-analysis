@@ -38,16 +38,18 @@ def record_parse_error(connection, record: ParseErrorRecord) -> str:
     connection.execute(
         """
         INSERT INTO parse_errors (
-            error_id, hand_hash, file_hash, source_path, block_index,
+            error_id, hand_hash, raw_hand_hash, file_hash, source_path, raw_file_path, block_index,
             error_code, message, raw_excerpt
         )
-        SELECT ?, ?, ?, ?, ?, ?, ?, ?
+        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         WHERE NOT EXISTS (SELECT 1 FROM parse_errors WHERE error_id = ?)
         """,
         [
             error_id,
             record.hand_hash,
+            record.hand_hash,
             record.file_hash,
+            record.source_path,
             record.source_path,
             record.block_index,
             record.error_code,
@@ -57,4 +59,3 @@ def record_parse_error(connection, record: ParseErrorRecord) -> str:
         ],
     )
     return error_id
-
