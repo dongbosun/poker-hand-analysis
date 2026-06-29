@@ -24,6 +24,7 @@ def test_bovada_parser_handles_actual_revealed_format():
     assert any(action.action_type == ActionType.RETURN_UNCALLED for action in parsed.actions)
     assert any(action.action_type == ActionType.COLLECT for action in parsed.actions)
     assert any(action.street == Street.RIVER for action in parsed.actions)
+    assert not any(action.street == Street.SUMMARY for action in parsed.actions)
 
 
 def test_sanitizer_drops_actual_non_hero_hole_cards():
@@ -34,4 +35,3 @@ def test_sanitizer_drops_actual_non_hero_hole_cards():
     assert "[6s Ad]" not in sanitized
     assert "[8s Ah]" not in sanitized
     assert "*** SUMMARY ***" not in sanitized
-

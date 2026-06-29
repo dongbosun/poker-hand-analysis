@@ -122,6 +122,9 @@ class BovadaParser:
                     board_cards = marker_cards
                 continue
 
+            if current_street == Street.SUMMARY:
+                continue
+
             action = self._parse_action_line(line, current_street, len(actions) + 1)
             if action:
                 actions.append(action)

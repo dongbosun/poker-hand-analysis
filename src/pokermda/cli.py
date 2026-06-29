@@ -33,16 +33,19 @@ from pokermda.review.gtowizard_tracker import (
 )
 from pokermda.review.study_queue import build_study_queue, list_queue
 from pokermda.reports.database_profile import DatabaseProfile, build_database_profile
+from pokermda.reports.stats_summary import build_stats_summary
 
 console = Console()
 app = typer.Typer(no_args_is_help=True)
 queue_app = typer.Typer(no_args_is_help=True)
 gtowizard_app = typer.Typer(no_args_is_help=True)
 nodes_app = typer.Typer(no_args_is_help=True)
+stats_app = typer.Typer(no_args_is_help=True)
 
 app.add_typer(queue_app, name="queue")
 app.add_typer(gtowizard_app, name="gtowizard")
 app.add_typer(nodes_app, name="nodes")
+app.add_typer(stats_app, name="stats")
 
 
 def _settings(config: Path | None) -> AppSettings:
@@ -278,6 +281,24 @@ def nodes_list(config: Path | None = typer.Option(None, "--config", help="Path t
     console.print(table)
 
 
+@stats_app.command("summary")
+def stats_summary(
+    config: Path | None = typer.Option(None, "--config", help="Path to local YAML config."),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
+) -> None:
+    """Print currently supported aggregate poker stats."""
+    settings = _settings(config)
+    connection = _connection(settings)
+    summary = build_stats_summary(connection)
+    connection.close()
+
+    if json_output:
+        console.print(json.dumps(summary, ensure_ascii=False, indent=2))
+        return
+
+    _print_stats_summary(summary)
+
+
 def _print_profile_table(profile_data: DatabaseProfile) -> None:
     table = Table("Metric", "Value")
     labels = {
@@ -299,6 +320,67 @@ def _print_profile_table(profile_data: DatabaseProfile) -> None:
     for key, label in labels.items():
         table.add_row(label, str(getattr(profile_data, key)))
     console.print(table)
+
+
+def _print_stats_summary(summary: dict[str, object]) -> None:
+    profile = summary["profile"]
+    profile_table = Table("Metric", "Value")
+    for key in ("hands", "participants", "actions", "parse_errors", "import_files"):
+        profile_table.add_row(key, str(profile[key]))
+    console.print(profile_table)
+
+    core_table = Table(
+        "Group",
+        "Opps",
+        "VPIP",
+        "PFR",
+        "VPIP-PFR",
+        "Call",
+        "Fold",
+        "Flop Act",
+        "Showdown",
+        "Collected",
+    )
+    for row in summary["core"]:
+        core_table.add_row(
+            row["group"],
+            str(row["opportunities"]),
+            f"{row['vpip_n']}/{row['opportunities']} ({row['vpip_pct']}%)",
+            f"{row['pfr_n']}/{row['opportunities']} ({row['pfr_pct']}%)",
+            f"{row['vpip_minus_pfr_pct']}%",
+            f"{row['preflop_call_pct']}%",
+            f"{row['preflop_fold_pct']}%",
+            f"{row['flop_action_pct']}%",
+            f"{row['showdown_pct']}%",
+            f"{row['collected_pct']}%",
+        )
+    console.print(core_table)
+
+    for title, key in (("Hero By Position", "hero_by_position"), ("Pool By Position", "pool_by_position")):
+        table = Table(title, "Opps", "VPIP", "PFR", "Call", "Fold", "Flop Act", "Showdown", "Collected")
+        for row in summary[key]:
+            table.add_row(
+                row["position"],
+                str(row["opportunities"]),
+                f"{row['vpip_n']}/{row['opportunities']} ({row['vpip_pct']}%)",
+                f"{row['pfr_n']}/{row['opportunities']} ({row['pfr_pct']}%)",
+                f"{row['preflop_call_pct']}%",
+                f"{row['preflop_fold_pct']}%",
+                f"{row['flop_action_pct']}%",
+                f"{row['showdown_pct']}%",
+                f"{row['collected_pct']}%",
+            )
+        console.print(table)
+
+    action_table = Table("Action Type", "Count", "Pct")
+    for row in summary["action_type_counts"]:
+        action_table.add_row(row["action_type"], str(row["count"]), f"{row['pct']}%")
+    console.print(action_table)
+
+    street_table = Table("Street", "Actions", "Hands With Action")
+    for row in summary["street_action_counts"]:
+        street_table.add_row(row["street"], str(row["actions"]), str(row["hands_with_action"]))
+    console.print(street_table)
 
 
 if __name__ == "__main__":

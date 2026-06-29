@@ -164,6 +164,20 @@ pokermda profile
 pokermda profile --json
 ```
 
+## 当前可运行 Stats
+
+```bash
+pokermda stats summary
+pokermda stats summary --json
+```
+
+当前 stats 定义：
+
+- VPIP：发到牌的 seat 为分母；preflop call / raise / bet / all-in 计入；blind、posts chip、ante、straddle 不计入。
+- PFR：发到牌的 seat 为分母；preflop raise 或 all-in(raise) 计入。
+- pool：Bovada 匿名数据中的所有非 hero seat 聚合样本，不代表可追踪的单个玩家。
+- collected：有 `Hand result` / collected action，不等于净盈利或 bb/100。
+
 ## 每天复盘流程
 
 推荐日常流程：
