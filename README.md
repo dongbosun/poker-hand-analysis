@@ -140,6 +140,30 @@ pokermda ingest --limit-files 20
 pokermda ingest --source-dir "/Users/dongbosun/Bovada.lv Poker/Hand History"
 ```
 
+## 数据库基本信息
+
+以后需要快速确认数据库状态时运行：
+
+```bash
+pokermda profile
+```
+
+它会输出：
+
+- DuckDB 里有多少手牌。
+- bronze raw hand blocks 数量。
+- parse error 数量。
+- Bovada 原始目录里有多少 `.txt` 文件。
+- 按文件 hash 判断已经完成入库的原始文件数。
+- 按文件 hash 判断尚未入库的原始文件数。
+- import ledger 中 imported / skipped duplicate / failed 文件路径数量。
+
+机器可读输出：
+
+```bash
+pokermda profile --json
+```
+
 ## 每天复盘流程
 
 推荐日常流程：
@@ -222,4 +246,3 @@ make test
 - Parser 初版只覆盖高频结构，遇到未知格式要写 parse error，不要崩溃。
 - 新增表时同步更新 `src/pokermda/db/schema.sql` 和 README。
 - 新增用户可执行功能时同步更新 CLI、README 和测试。
-

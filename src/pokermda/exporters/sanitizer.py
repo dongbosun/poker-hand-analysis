@@ -5,9 +5,14 @@ from __future__ import annotations
 import re
 
 DEALT_RE = re.compile(r"^Dealt\s+to\s+(?P<name>.+?)\s+\[(?P<cards>[^\]]+)\]", re.IGNORECASE)
+SPOT_DEALT_RE = re.compile(
+    r"^(?P<name>.+?)\s*:\s*Card dealt to a spot\s+\[(?P<cards>[^\]]+)\]",
+    re.IGNORECASE,
+)
 SEAT_NAME_RE = re.compile(r"^Seat\s+\d+:\s+(?P<name>.+?)\s+\(", re.IGNORECASE)
 ACTION_NAME_RE = re.compile(r"^(?P<name>[^:]+):\s+")
 CARD_BRACKET_RE = re.compile(r"\[[^\]]+\]")
+HERO_LINE_RE = re.compile(r"^(?:Hero\s*:|Dealt\s+to\s+Hero\b)", re.IGNORECASE)
 
 
 def sanitize_bovada_hand(raw_text: str, hero_name: str | None = None) -> str:
@@ -26,6 +31,10 @@ def sanitize_bovada_hand(raw_text: str, hero_name: str | None = None) -> str:
         if dealt_match and hero and dealt_match.group("name").strip() != hero:
             continue
 
+        spot_dealt_match = SPOT_DEALT_RE.match(stripped)
+        if spot_dealt_match and hero and spot_dealt_match.group("name").strip() != hero:
+            continue
+
         line = _replace_names(line, mapping)
         line = _hide_non_hero_showdown_cards(line)
         sanitized_lines.append(line)
@@ -35,7 +44,15 @@ def sanitize_bovada_hand(raw_text: str, hero_name: str | None = None) -> str:
 
 def _detect_hero(raw_text: str) -> str | None:
     for line in raw_text.splitlines():
-        match = DEALT_RE.match(line.strip())
+        stripped = line.strip()
+        if "[ME]" in stripped.upper():
+            seat_match = SEAT_NAME_RE.match(stripped)
+            if seat_match:
+                return seat_match.group("name").strip()
+            action_match = ACTION_NAME_RE.match(stripped)
+            if action_match:
+                return action_match.group("name").strip()
+        match = DEALT_RE.match(stripped)
         if match:
             return match.group("name").strip()
     return None
@@ -52,6 +69,10 @@ def _discover_player_names(raw_text: str) -> list[str]:
         dealt_match = DEALT_RE.match(stripped)
         if dealt_match:
             _append_unique(names, dealt_match.group("name").strip())
+            continue
+        spot_dealt_match = SPOT_DEALT_RE.match(stripped)
+        if spot_dealt_match:
+            _append_unique(names, spot_dealt_match.group("name").strip())
             continue
         action_match = ACTION_NAME_RE.match(stripped)
         if action_match and not stripped.startswith("***"):
@@ -87,9 +108,15 @@ def _replace_names(line: str, mapping: dict[str, str]) -> str:
 
 def _hide_non_hero_showdown_cards(line: str) -> str:
     lowered = line.lower()
-    if line.startswith("Hero:") or line.startswith("Dealt to Hero"):
+    if HERO_LINE_RE.match(line):
         return line
-    if ": shows " in lowered or ": mucks " in lowered or " showed " in lowered:
+    if (
+        ": shows " in lowered
+        or ": mucks " in lowered
+        or " showed " in lowered
+        or ": showdown " in lowered
+        or ": does not show " in lowered
+    ):
         return CARD_BRACKET_RE.sub("[hidden]", line)
     return line
 

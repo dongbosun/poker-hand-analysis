@@ -19,6 +19,7 @@ class ActionType(StrEnum):
     ANTE = "ante"
     POST_SMALL_BLIND = "post_small_blind"
     POST_BIG_BLIND = "post_big_blind"
+    POST_CHIP = "post_chip"
     STRADDLE = "straddle"
     FOLD = "fold"
     CHECK = "check"
@@ -31,4 +32,3 @@ class ActionType(StrEnum):
     COLLECT = "collect"
     RETURN_UNCALLED = "return_uncalled"
     UNKNOWN = "unknown"
-

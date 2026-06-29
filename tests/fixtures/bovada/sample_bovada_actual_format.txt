@@ -1,0 +1,42 @@
+Bovada Hand #4899483639 TBL#37279418 HOLDEM No Limit - 2026-06-26 06:47:24
+Seat 1: UTG+1 ($4.64 in chips)
+Seat 2: Dealer ($6.52 in chips)
+Seat 5: Big Blind ($5.49 in chips)
+Seat 6: UTG [ME] ($5 in chips)
+Dealer : Set dealer [2]
+Big Blind : Big blind $0.05
+UTG [ME] : Posts chip $0.05
+*** HOLE CARDS ***
+UTG+1 : Card dealt to a spot [4h Jc]
+Dealer : Card dealt to a spot [6s Ad]
+Big Blind : Card dealt to a spot [8s Ah]
+UTG [ME] : Card dealt to a spot [5s Qs]
+UTG [ME] : Checks
+UTG+1 : Folds (timeout)
+Dealer : Raises $0.13 to $0.13
+Big Blind : Calls $0.08
+UTG [ME] : Calls $0.08
+*** FLOP *** [6h 7c Jd]
+Big Blind : Checks
+UTG [ME] : Checks
+Dealer : Checks
+*** TURN *** [6h 7c Jd] [Tc]
+Big Blind : Checks
+UTG [ME] : Checks
+Dealer : Checks
+*** RIVER *** [6h 7c Jd Tc] [5d]
+Big Blind : Checks
+UTG [ME] : Bets $0.05
+Dealer : Folds
+Big Blind : Folds
+UTG [ME] : Return uncalled portion of bet $0.05
+UTG [ME] : Does not show [5s Qs] (One pair)
+UTG [ME] : Hand result $0.38
+*** SUMMARY ***
+Total Pot($0.39)
+Board [6h 7c Jd Tc 5d]
+Seat+1: UTG+1 Folded before the FLOP
+Seat+2: Dealer Folded on the RIVER
+Seat+5: Big Blind Folded on the RIVER
+Seat+6: UTG $0.38 [Does not show]
+

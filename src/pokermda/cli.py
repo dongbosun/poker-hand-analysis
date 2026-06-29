@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import typer
@@ -31,6 +32,7 @@ from pokermda.review.gtowizard_tracker import (
     record_export_batch,
 )
 from pokermda.review.study_queue import build_study_queue, list_queue
+from pokermda.reports.database_profile import DatabaseProfile, build_database_profile
 
 console = Console()
 app = typer.Typer(no_args_is_help=True)
@@ -167,6 +169,25 @@ def ingest(
     )
 
 
+@app.command()
+def profile(
+    config: Path | None = typer.Option(None, "--config", help="Path to local YAML config."),
+    source_dir: Path | None = typer.Option(None, "--source-dir", help="Override Bovada source dir."),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
+) -> None:
+    """Print a compact database and Bovada raw-file profile."""
+    settings = _settings(config)
+    connection = _connection(settings)
+    profile_data = build_database_profile(settings, connection, source_dir=source_dir)
+    connection.close()
+
+    if json_output:
+        console.print(json.dumps(profile_data.to_dict(), ensure_ascii=False, indent=2))
+        return
+
+    _print_profile_table(profile_data)
+
+
 @queue_app.command("build")
 def queue_build(
     config: Path | None = typer.Option(None, "--config", help="Path to local YAML config."),
@@ -257,6 +278,28 @@ def nodes_list(config: Path | None = typer.Option(None, "--config", help="Path t
     console.print(table)
 
 
+def _print_profile_table(profile_data: DatabaseProfile) -> None:
+    table = Table("Metric", "Value")
+    labels = {
+        "hands_in_database": "Hands in database",
+        "bronze_raw_hand_blocks": "Bronze raw hand blocks",
+        "parsed_raw_hand_blocks": "Parsed raw hand blocks",
+        "parse_errors": "Parse errors",
+        "raw_bovada_files": "Raw Bovada txt files",
+        "raw_bovada_unique_file_hashes": "Raw unique file hashes",
+        "raw_bovada_files_completed_by_hash": "Raw files completed by hash",
+        "raw_bovada_files_not_imported_by_hash": "Raw files not imported by hash",
+        "ledger_file_paths": "Ledger file paths",
+        "ledger_imported_file_paths": "Ledger imported file paths",
+        "ledger_skipped_duplicate_file_paths": "Ledger skipped duplicate paths",
+        "ledger_failed_file_paths": "Ledger failed file paths",
+        "duckdb_path": "DuckDB path",
+        "bovada_raw_hand_history_dir": "Bovada raw dir",
+    }
+    for key, label in labels.items():
+        table.add_row(label, str(getattr(profile_data, key)))
+    console.print(table)
+
+
 if __name__ == "__main__":
     app()
-

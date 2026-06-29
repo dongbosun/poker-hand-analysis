@@ -20,7 +20,7 @@ from pokermda.utils.hashing import sha256_text
 PARSER_VERSION = "bovada-parser-v1"
 
 SEAT_RE = re.compile(
-    r"^Seat\s+(?P<seat>\d+):\s+(?P<name>.+?)\s+\(\$?(?P<stack>[\d,.]+)(?:\s+in chips)?\)",
+    r"^Seat\s+(?P<seat>\d+):\s+(?P<name>.+?)\s+\(\$?(?P<stack>[\d,.]+)\s+in chips\)",
     re.IGNORECASE,
 )
 BUTTON_RE = re.compile(
@@ -28,6 +28,14 @@ BUTTON_RE = re.compile(
     re.IGNORECASE,
 )
 DEALT_RE = re.compile(r"^Dealt\s+to\s+(?P<name>.+?)\s+\[(?P<cards>[^\]]+)\]", re.IGNORECASE)
+SPOT_DEALT_RE = re.compile(
+    r"^(?P<name>.+?)\s*:\s*Card dealt to a spot\s+\[(?P<cards>[^\]]+)\]",
+    re.IGNORECASE,
+)
+SET_DEALER_RE = re.compile(
+    r"^(?P<name>.+?)?\s*:?\s*Set dealer\s+\[(?P<seat>\d+)\]",
+    re.IGNORECASE,
+)
 AMOUNT_RE = re.compile(r"\$?(-?[\d,]+(?:\.\d+)?)")
 
 
@@ -62,6 +70,9 @@ class BovadaParser:
                     player_name=seat_match.group("name").strip(),
                     stack=self._to_amount(seat_match.group("stack")),
                 )
+                if self._is_hero_name(participant.player_name):
+                    participant.is_hero = True
+                    hero_name = participant.player_name
                 participants[participant.player_name] = participant
                 ordered_participants.append(participant)
                 continue
@@ -74,6 +85,11 @@ class BovadaParser:
                 button_seat = int(button_match.group("button"))
                 continue
 
+            set_dealer_match = SET_DEALER_RE.match(line)
+            if set_dealer_match:
+                button_seat = int(set_dealer_match.group("seat"))
+                continue
+
             dealt_match = DEALT_RE.match(line)
             if dealt_match:
                 hero_name = dealt_match.group("name").strip()
@@ -82,6 +98,20 @@ class BovadaParser:
                 if participant:
                     participant.is_hero = True
                     participant.hole_cards = cards
+                continue
+
+            spot_dealt_match = SPOT_DEALT_RE.match(line)
+            if spot_dealt_match:
+                player_name = spot_dealt_match.group("name").strip()
+                cards = cards_to_text(parse_cards(spot_dealt_match.group("cards")))
+                participant = participants.get(player_name)
+                if participant:
+                    participant.hole_cards = cards
+                    if self._is_hero_name(player_name):
+                        participant.is_hero = True
+                        hero_name = player_name
+                elif self._is_hero_name(player_name):
+                    hero_name = player_name
                 continue
 
             next_street = self._street_from_marker(line)
@@ -95,6 +125,9 @@ class BovadaParser:
             action = self._parse_action_line(line, current_street, len(actions) + 1)
             if action:
                 actions.append(action)
+                if action.actor in participants and action.action_type == ActionType.COLLECT:
+                    participant = participants[action.actor]
+                    participant.net_result = (participant.net_result or 0) + (action.amount or 0)
 
         if not table_name:
             table_name = self._parse_table_from_header(header)
@@ -144,8 +177,14 @@ class BovadaParser:
 
         if lowered.startswith("posts small blind"):
             return self._action(sequence_no, street, actor, ActionType.POST_SMALL_BLIND, text, line)
+        if lowered.startswith("small blind"):
+            return self._action(sequence_no, street, actor, ActionType.POST_SMALL_BLIND, text, line)
         if lowered.startswith("posts big blind"):
             return self._action(sequence_no, street, actor, ActionType.POST_BIG_BLIND, text, line)
+        if lowered.startswith("big blind"):
+            return self._action(sequence_no, street, actor, ActionType.POST_BIG_BLIND, text, line)
+        if lowered.startswith("posts chip"):
+            return self._action(sequence_no, street, actor, ActionType.POST_CHIP, text, line)
         if lowered.startswith("posts the ante") or lowered.startswith("posts ante"):
             return self._action(sequence_no, street, actor, ActionType.ANTE, text, line)
         if lowered.startswith("posts straddle"):
@@ -162,11 +201,20 @@ class BovadaParser:
             amount, raise_to = self._parse_raise(text)
             return Action(sequence_no, street, actor, ActionType.RAISE, amount, raise_to, line)
         if "all-in" in lowered or "all in" in lowered:
-            return self._action(sequence_no, street, actor, ActionType.ALL_IN, text, line)
+            amount, raise_to = self._parse_raise(text)
+            return Action(sequence_no, street, actor, ActionType.ALL_IN, amount, raise_to, line)
         if lowered.startswith("shows"):
+            return Action(sequence_no, street, actor, ActionType.SHOW, raw_line=line)
+        if lowered.startswith("showdown"):
             return Action(sequence_no, street, actor, ActionType.SHOW, raw_line=line)
         if lowered.startswith("mucks"):
             return Action(sequence_no, street, actor, ActionType.MUCK, raw_line=line)
+        if lowered.startswith("does not show"):
+            return Action(sequence_no, street, actor, ActionType.MUCK, raw_line=line)
+        if lowered.startswith("return uncalled portion of bet"):
+            return self._action(sequence_no, street, actor, ActionType.RETURN_UNCALLED, text, line)
+        if lowered.startswith("hand result"):
+            return self._action(sequence_no, street, actor, ActionType.COLLECT, text, line)
         if lowered.startswith("collected") or " collected " in lowered:
             return self._action(sequence_no, street, actor, ActionType.COLLECT, text, line)
         return None
@@ -176,6 +224,10 @@ class BovadaParser:
         if lowered.startswith("uncalled bet"):
             amount = self._first_amount(line)
             return Action(sequence_no, street, None, ActionType.RETURN_UNCALLED, amount, None, line)
+        if " collected " in lowered and "from pot" in lowered:
+            actor = line.split(" collected ", 1)[0].strip()
+            amount = self._first_amount(line)
+            return Action(sequence_no, street, actor, ActionType.COLLECT, amount, None, line)
         return None
 
     def _action(
@@ -226,3 +278,6 @@ class BovadaParser:
     def _parse_table_from_header(self, header: str) -> str | None:
         match = re.search(r"\bTBL\s*#?([\w.-]+)", header, re.IGNORECASE)
         return match.group(1) if match else None
+
+    def _is_hero_name(self, name: str) -> bool:
+        return "[ME]" in name.upper()
