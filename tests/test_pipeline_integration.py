@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import subprocess
@@ -62,6 +63,13 @@ def test_full_local_pipeline_with_fixture(tmp_path):
     assert "files_skipped" in second_ingest.stdout
 
     run_cli(config_path, "status", "imports")
+    edge_stats = run_cli(config_path, "stats", "edge", "--json")
+    edge_payload = json.loads(edge_stats.stdout)
+    assert edge_payload["profile"]["hands"] == 1
+    assert "rfi_by_position" in edge_payload["preflop"]
+    assert "river_calls" in edge_payload["postflop"]
+    assert "sb_first_action_ev" in edge_payload["blind_play"]
+
     run_cli(config_path, "queue-review", "--top", "1")
     export = run_cli(config_path, "export-gtowizard", "--limit", "1")
     assert "hands_gtowizard.txt" in export.stdout
@@ -88,4 +96,3 @@ def test_full_local_pipeline_with_fixture(tmp_path):
     assert "Hero : Card dealt to a spot [5s Qs]" in exported_text
     assert "[4h Jc]" not in exported_text
     assert "[6s Ad]" not in exported_text
-

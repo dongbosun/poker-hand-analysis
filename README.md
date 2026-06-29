@@ -176,6 +176,8 @@ pokermda profile --json
 ```bash
 pokermda stats summary
 pokermda stats summary --json
+pokermda stats edge
+pokermda stats edge --json
 ```
 
 当前 stats 定义：
@@ -184,6 +186,33 @@ pokermda stats summary --json
 - PFR：发到牌的 seat 为分母；preflop raise 或 all-in(raise) 计入。
 - pool：Bovada 匿名数据中的所有非 hero seat 聚合样本，不代表可追踪的单个玩家。
 - collected：有 `Hand result` / collected action，不等于净盈利或 bb/100。
+
+`pokermda stats edge` 是用于判断 edge 的正式 pipeline，当前输出：
+
+- RFI by position：UTG / MP / CO / BTN / SB open 频率。
+- Cold call by position：面对前面 raise 时第一 voluntary action 为 call 的频率。
+- 3bet by position：面对 open raise 时第一 voluntary action 为 raise/all-in(raise) 的频率。
+- 3bet by position vs open position：按 3bettor 位置和 opener 位置交叉。
+- Fold to 3bet：open raiser 面对第一手 3bet 后第一反应为 fold 的频率。
+- C-bet flop / turn barrel / river barrel：last preflop raiser 在无人 donk 领先下注前的主动下注频率。
+- WTSD / W$SD / WWSF：saw flop 后的摊牌、摊牌赢钱、看 flop 后赢钱质量。
+- River call efficiency：river call 手牌的总净 bb / river call 投入 bb。
+- Bluff catch result：river call 且进入 showdown 的子集胜率和净结果。
+- SB limp/complete/call EV：Small Blind 第一 voluntary action bucket 的近似净 bb。
+
+位置标准化：
+
+- `Dealer` -> `BTN`
+- `Small Blind` -> `SB`
+- `Big Blind` -> `BB`
+- `UTG+1` -> `MP`
+- `UTG+2` -> `CO`
+
+金额口径：
+
+- 每手牌用该手 `post_big_blind` 的金额换算 bb。
+- 当前 `net_bb` 为近似值：`collect + returned uncalled - committed chips` 后除以该手 BB。
+- 这个口径已经足够发现 river call、SB complete/call 等大方向 leak；后续如果要做 solver 级 EV，需要继续补 pot/stack/facing-bet reconstruction。
 
 ## 每天复盘流程
 

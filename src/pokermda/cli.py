@@ -33,6 +33,7 @@ from pokermda.review.gtowizard_tracker import (
 )
 from pokermda.review.study_queue import build_study_queue, list_queue
 from pokermda.reports.database_profile import DatabaseProfile, build_database_profile
+from pokermda.reports.edge_stats import build_edge_stats
 from pokermda.reports.stats_summary import build_stats_summary
 
 console = Console()
@@ -285,7 +286,7 @@ def profile(
     connection.close()
 
     if json_output:
-        console.print(json.dumps(profile_data.to_dict(), ensure_ascii=False, indent=2))
+        print(json.dumps(profile_data.to_dict(), ensure_ascii=False, indent=2))
         return
 
     _print_profile_table(profile_data)
@@ -662,10 +663,28 @@ def stats_summary(
     connection.close()
 
     if json_output:
-        console.print(json.dumps(summary, ensure_ascii=False, indent=2))
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
         return
 
     _print_stats_summary(summary)
+
+
+@stats_app.command("edge")
+def stats_edge(
+    config: Path | None = typer.Option(None, "--config", help="Path to local YAML config."),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
+) -> None:
+    """Print edge-oriented stats for preflop, postflop, showdown, river calls, and SB play."""
+    settings = _settings(config)
+    connection = _connection(settings)
+    summary = build_edge_stats(connection)
+    connection.close()
+
+    if json_output:
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        return
+
+    _print_edge_stats(summary)
 
 
 def _mark_gtow_batch(config: Path | None, batch: str, status: str, notes: str | None) -> None:
@@ -768,6 +787,107 @@ def _print_profile_table(profile_data: DatabaseProfile) -> None:
     }
     for key, label in labels.items():
         table.add_row(label, str(getattr(profile_data, key)))
+    console.print(table)
+
+
+def _print_edge_stats(summary: dict[str, object]) -> None:
+    profile = summary["profile"]
+    profile_table = Table("Metric", "Value")
+    for key in ("hands", "participants_dealt", "actions"):
+        profile_table.add_row(key, str(profile[key]))
+    console.print(profile_table)
+
+    preflop = summary["preflop"]
+    _print_rate_table("RFI By Position", preflop["rfi_by_position"])
+    _print_rate_table("Cold Call By Position", preflop["cold_call_by_position"])
+    _print_rate_table("3bet By Position", preflop["three_bet_by_position"])
+    _print_rate_vs_table("3bet By Position vs Open Position", preflop["three_bet_by_position_vs_open"])
+    _print_rate_table("Fold To 3bet By Open Position", preflop["fold_to_three_bet_by_position"])
+
+    postflop = summary["postflop"]
+    _print_named_rate_table("Postflop Aggression", postflop["aggression"])
+    _print_named_rate_table("Showdown Quality", postflop["showdown_quality"])
+    _print_river_call_table("River Call / Bluff Catch", postflop["river_calls"])
+
+    blind_play = summary["blind_play"]
+    _print_ev_table("SB First Action EV", blind_play["sb_first_action_ev"])
+
+
+def _print_rate_table(title: str, rows: list[dict[str, object]]) -> None:
+    table = Table(title, "Position", "Success/Opps", "Pct")
+    for row in rows:
+        table.add_row(
+            str(row["group"]),
+            str(row["position"]),
+            f"{row['successes']}/{row['opportunities']}",
+            f"{row['pct']}%",
+        )
+    console.print(table)
+
+
+def _print_rate_vs_table(title: str, rows: list[dict[str, object]]) -> None:
+    table = Table(title, "Pos", "Vs Open", "Success/Opps", "Pct")
+    for row in rows:
+        table.add_row(
+            str(row["group"]),
+            str(row["position"]),
+            str(row["vs_open_position"]),
+            f"{row['successes']}/{row['opportunities']}",
+            f"{row['pct']}%",
+        )
+    console.print(table)
+
+
+def _print_named_rate_table(title: str, rows: list[dict[str, object]]) -> None:
+    table = Table(title, "Stat", "Success/Opps", "Pct")
+    for row in rows:
+        table.add_row(
+            str(row["group"]),
+            str(row["stat"]),
+            f"{row['successes']}/{row['opportunities']}",
+            f"{row['pct']}%",
+        )
+    console.print(table)
+
+
+def _print_river_call_table(title: str, rows: list[dict[str, object]]) -> None:
+    table = Table(
+        title,
+        "Position",
+        "Calls",
+        "Call bb",
+        "Net bb",
+        "RCE",
+        "SD Calls",
+        "Bluff Catch Win",
+    )
+    for row in rows:
+        if row["position"] != "ALL" and row["calls"] == 0:
+            continue
+        table.add_row(
+            str(row["group"]),
+            str(row["position"]),
+            str(row["calls"]),
+            str(row["total_call_bb"]),
+            str(row["total_net_bb"]),
+            str(row["river_call_efficiency"]),
+            str(row["showdown_calls"]),
+            f"{row['bluff_catch_win_pct']}%",
+        )
+    console.print(table)
+
+
+def _print_ev_table(title: str, rows: list[dict[str, object]]) -> None:
+    table = Table(title, "Category", "Hands", "Total bb", "Avg bb", "Profitable")
+    for row in rows:
+        table.add_row(
+            str(row["group"]),
+            str(row["category"]),
+            str(row["hands"]),
+            str(row["total_net_bb"]),
+            str(row["avg_net_bb"]),
+            f"{row['profitable_pct']}%",
+        )
     console.print(table)
 
 
