@@ -1,0 +1,32 @@
+Bovada Hand #1111111111: Hold'em No Limit ($0.02/$0.05 USD) - 2026/06/26 06:46:43 ET
+Table 'No.37279418' 6-max Seat #1 is the button
+Seat 1: Hero ($5.00 in chips)
+Seat 2: Villain1 ($4.95 in chips)
+Hero: posts small blind $0.02
+Villain1: posts big blind $0.05
+*** HOLE CARDS ***
+Dealt to Hero [Ah Kh]
+Hero: raises $0.13 to $0.15
+Villain1: folds
+Hero collected $0.10 from pot
+*** SUMMARY ***
+Total pot $0.10 | Rake $0
+
+Bovada Hand #2222222222: Hold'em No Limit ($0.02/$0.05 USD) - 2026/06/26 06:48:01 ET
+Table 'No.37279418' 6-max Seat #2 is the button
+Seat 1: Hero ($5.10 in chips)
+Seat 2: Villain1 ($4.90 in chips)
+Hero: posts big blind $0.05
+Villain1: posts small blind $0.02
+*** HOLE CARDS ***
+Dealt to Hero [9c 9d]
+Villain1: calls $0.03
+Hero: checks
+*** FLOP *** [9s 4h 2d]
+Villain1: bets $0.05
+Hero: raises $0.20 to $0.25
+Villain1: folds
+Hero collected $0.20 from pot
+*** SUMMARY ***
+Total pot $0.20 | Rake $0
+

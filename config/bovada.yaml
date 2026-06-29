@@ -1,0 +1,14 @@
+site: "bovada"
+raw_hand_history_dir: "/Users/dongbosun/Bovada.lv Poker/Hand History"
+file_glob: "*.txt"
+recursive: true
+encodings:
+  primary: "utf-8"
+  fallback: "latin-1"
+parser:
+  tolerate_unknown_lines: true
+  write_parse_errors: true
+  dedupe_by:
+    - "bovada_hand_number"
+    - "hand_hash"
+

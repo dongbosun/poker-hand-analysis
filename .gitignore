@@ -1,0 +1,22 @@
+# Local runtime data. Keep only the placeholder if desired.
+dataset/
+!dataset/
+/dataset/*
+!/dataset/.gitkeep
+
+*.duckdb
+*.sqlite
+*.parquet
+*.jsonl
+*.log
+.env
+.DS_Store
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+config/local.yaml
+.venv/
+dist/
+build/
+*.egg-info/

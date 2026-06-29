@@ -1,0 +1,8 @@
+export_root: "dataset/exports/gtowizard"
+sanitizer_version: "hero-perspective-v1"
+manual_upload: true
+include_manifest: true
+hide_non_hero_hole_cards: true
+drop_fully_revealed_summary: true
+player_name_policy: "stable_hero_villain_aliases"
+

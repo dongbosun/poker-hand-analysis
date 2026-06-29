@@ -1,0 +1,23 @@
+project_root: "/Users/dongbosun/Desktop/poker手牌复盘/bovada手牌/poker-hands-analyzer"
+dataset_dir: "/Users/dongbosun/Desktop/poker手牌复盘/bovada手牌/poker-hands-analyzer/dataset"
+bovada_raw_hand_history_dir: "/Users/dongbosun/Bovada.lv Poker/Hand History"
+duckdb_path: "/Users/dongbosun/Desktop/poker手牌复盘/bovada手牌/poker-hands-analyzer/dataset/db/poker.duckdb"
+
+create_raw_symlink: true
+raw_symlink_name: "bovada_hand_history"
+timezone: "America/Los_Angeles"
+
+hero_aliases:
+  - "Hero"
+
+ingest:
+  file_glob: "*.txt"
+  encoding: "utf-8"
+  fallback_encoding: "latin-1"
+  stop_on_parse_error: false
+
+gtowizard:
+  export_format: "bovada_sanitized"
+  sanitizer_version: "hero-perspective-v1"
+  default_batch_size: 20
+

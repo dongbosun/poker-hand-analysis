@@ -1,0 +1,13 @@
+id: "river_overbet_example"
+description: "River aggressor bets at least 125% pot after being last aggressor on turn."
+street: "river"
+filters:
+  prior_street_aggressor: true
+  action_type: "bet"
+  min_sizing_pot_fraction: 1.25
+metrics:
+  - "frequency"
+  - "call_frequency"
+  - "fold_frequency"
+  - "raise_frequency"
+

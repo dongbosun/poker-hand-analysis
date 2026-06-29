@@ -1,0 +1,15 @@
+id: "turn_barrel_response_example"
+description: "Flop c-bettor barrels turn; track response by position and sizing bucket."
+street: "turn"
+filters:
+  flop_cbetter: true
+  action_type: "bet"
+  opportunity: "defender_response"
+group_by:
+  - "position"
+  - "sizing_bucket"
+metrics:
+  - "fold_frequency"
+  - "call_frequency"
+  - "raise_frequency"
+

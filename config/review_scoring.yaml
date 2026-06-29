@@ -1,0 +1,16 @@
+weights:
+  big_pot_bb: 3.0
+  all_in: 2.5
+  river_decision: 2.0
+  showdown: 1.5
+  parse_warning: 0.5
+
+queue:
+  default_priority: 50
+  max_daily_new_hands: 50
+  statuses:
+    - "queued"
+    - "exported"
+    - "reviewed"
+    - "archived"
+

@@ -1,0 +1,13 @@
+id: "flop_cbet_response_example"
+description: "In-position preflop raiser continuation bets flop; track defender response."
+street: "flop"
+filters:
+  preflop_raiser: true
+  aggressor_position: "ip"
+  action_type: "bet"
+  opportunity: "defender_response"
+metrics:
+  - "fold_frequency"
+  - "call_frequency"
+  - "raise_frequency"
+
