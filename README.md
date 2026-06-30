@@ -189,16 +189,43 @@ pokermda stats edge --json
 
 `pokermda stats edge` 是用于判断 edge 的正式 pipeline，当前输出：
 
+- Overall winrate / redline / blueline / pot type EV / biggest hands。
+- Winrate by position：每个位置的 hands、VPIP、PFR、3bet、net bb、bb/100。
 - RFI by position：UTG / MP / CO / BTN / SB open 频率。
+- RFI hand class breakdown：按位置和手牌类别看 RFI 后 EV。
 - Cold call by position：面对前面 raise 时第一 voluntary action 为 call 的频率。
+- BTN cold call deep report：按 opener position 和 hand class 拆 net bb / hand_ids。
+- SB first action vs opener：SB complete / call vs raise / raise 按 opener position 拆 EV。
+- BB defense vs steal：BB 面对 CO / BTN / SB steal 的 fold / call / 3bet 分布和 EV。
 - 3bet by position：面对 open raise 时第一 voluntary action 为 raise/all-in(raise) 的频率。
 - 3bet by position vs open position：按 3bettor 位置和 opener 位置交叉。
+- 3bet hand class / 3bet pot result / 4bet / squeeze / steal / fold-to-steal。
 - Fold to 3bet：open raiser 面对第一手 3bet 后第一反应为 fold 的频率。
-- C-bet flop / turn barrel / river barrel：last preflop raiser 在无人 donk 领先下注前的主动下注频率。
+- C-bet flop / turn barrel / river barrel：last preflop raiser 在无人 donk 领先下注前的主动下注频率和 EV。
+- C-bet deep report：SRP/3BP、IP/OOP、heads-up/multiway、c-bet result tree、facing c-bet response、turn after c-bet。
+- Donk / stab vs missed c-bet / check-raise / postflop sizing / facing bet-size defense proxy。
 - WTSD / W$SD / WWSF：saw flop 后的摊牌、摊牌赢钱、看 flop 后赢钱质量。
 - River call efficiency：river call 手牌的总净 bb / river call 投入 bb。
-- Bluff catch result：river call 且进入 showdown 的子集胜率和净结果。
+- River call by size / line：按下注尺度和 villain line 拆 RCE。
+- Bluff catch result：river call 且进入 showdown 的子集胜率、净结果和 hand_ids。
 - SB limp/complete/call EV：Small Blind 第一 voluntary action bucket 的近似净 bb。
+- Starting hand matrix / hand class EV by position / dominated hand leak / pocket pair / suited connector reports。
+- Limped pot / isolation raise / multiway / stack depth / session / table-size reports。
+- Leak flags：按当前样本自动输出 Top suspected leaks。
+
+每个 rate / EV spot 尽量输出统一字段：
+
+- `opportunities`：机会数，分母。
+- `count`：实际发生次数，分子。
+- `frequency`：发生频率。
+- `net_bb`：该 spot 实际发生时的总输赢。
+- `opportunity_net_bb`：该 spot 所有机会的总输赢。
+- `bb_per_opportunity`：按机会数标准化的 EV。
+- `bb_per_count` / `bb_per_hand`：按实际发生次数或手数标准化的 EV。
+- `bb_per_100`：按机会/手数标准化到 100 的赢率。
+- `hand_ids`：实际发生该 spot 的手牌 ID，方便复盘。
+- `opportunity_hand_ids`：该 spot 机会手牌 ID，主要用于 fold/call/raise 分布排查。
+- `sample_warning`：`low_sample` 或 `no_sample`。
 
 位置标准化：
 
@@ -212,7 +239,18 @@ pokermda stats edge --json
 
 - 每手牌用该手 `post_big_blind` 的金额换算 bb。
 - 当前 `net_bb` 为近似值：`collect + returned uncalled - committed chips` 后除以该手 BB。
-- 这个口径已经足够发现 river call、SB complete/call 等大方向 leak；后续如果要做 solver 级 EV，需要继续补 pot/stack/facing-bet reconstruction。
+- postflop sizing 使用动作序列重建的 `pot_before_bb` 近似值，足够做 leak 定位，但不是 solver 级 pot model。
+- 暂不支持 all-in adjusted bb/100、精确 rake、value/bluff 自动分类、missed river value 自动判断、fish-in-blinds 标签；这些会在 `unsupported_or_approximate` 中明确标出。
+- 这个口径已经足够发现 river call、SB complete/call、BTN cold call、BB resteal、one-and-done c-bet 等大方向 leak；后续如果要做 solver 级 EV，需要继续补完整 pot/stack/facing-bet reconstruction 和 hand-strength classifier。
+
+刷新当前数据库 deep stats：
+
+```bash
+pokermda scan-raw
+pokermda ingest --new-only
+pokermda stats edge
+pokermda stats edge --json
+```
 
 ## 每天复盘流程
 

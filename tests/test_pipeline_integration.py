@@ -66,9 +66,16 @@ def test_full_local_pipeline_with_fixture(tmp_path):
     edge_stats = run_cli(config_path, "stats", "edge", "--json")
     edge_payload = json.loads(edge_stats.stdout)
     assert edge_payload["profile"]["hands"] == 1
+    assert "overall_winrate" in edge_payload["results"]
+    assert "winrate_by_position" in edge_payload["position"]
     assert "rfi_by_position" in edge_payload["preflop"]
+    assert "opportunities" in edge_payload["preflop"]["rfi_by_position"][0]
+    assert "count" in edge_payload["preflop"]["rfi_by_position"][0]
+    assert "hand_ids" in edge_payload["preflop"]["rfi_by_position"][0]
     assert "river_calls" in edge_payload["postflop"]
     assert "sb_first_action_ev" in edge_payload["blind_play"]
+    assert "starting_hand_matrix" in edge_payload["hand_classes"]
+    assert "leak_flags" in edge_payload
 
     run_cli(config_path, "queue-review", "--top", "1")
     export = run_cli(config_path, "export-gtowizard", "--limit", "1")

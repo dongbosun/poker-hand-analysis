@@ -797,55 +797,85 @@ def _print_edge_stats(summary: dict[str, object]) -> None:
         profile_table.add_row(key, str(profile[key]))
     console.print(profile_table)
 
+    results = summary["results"]
+    _print_ev_table("Overall Winrate", results["overall_winrate"])
+    _print_ev_table("Redline / Blueline", results["redline_blueline"])
+    _print_ev_table("Pot Type EV", results["pot_type_ev"])
+
+    position = summary["position"]
+    _print_frequency_ev_table("Winrate By Position", position["winrate_by_position"])
+
     preflop = summary["preflop"]
     _print_rate_table("RFI By Position", preflop["rfi_by_position"])
     _print_rate_table("Cold Call By Position", preflop["cold_call_by_position"])
     _print_rate_table("3bet By Position", preflop["three_bet_by_position"])
     _print_rate_vs_table("3bet By Position vs Open Position", preflop["three_bet_by_position_vs_open"])
     _print_rate_table("Fold To 3bet By Open Position", preflop["fold_to_three_bet_by_position"])
+    _print_ev_table("Entry Action EV By Position", preflop["entry_action_ev_by_position"])
+    _print_rate_vs_table("BTN Cold Call By Opener", preflop["btn_cold_call_by_opener"])
+    _print_ev_table("BTN Cold Call By Hand Class", preflop["btn_cold_call_by_hand_class"])
+    _print_ev_table("SB First Action Vs Opener", preflop["sb_first_action_vs_opener"])
+    _print_rate_table("BB Defense Vs Steal", preflop["bb_defense_vs_steal"])
 
     postflop = summary["postflop"]
     _print_named_rate_table("Postflop Aggression", postflop["aggression"])
+    _print_rate_table("C-bet Deep", postflop["cbet_deep"])
+    _print_rate_table("Facing C-bet", postflop["facing_cbet"])
+    _print_rate_table("Turn After C-bet", postflop["turn_after_cbet"])
     _print_named_rate_table("Showdown Quality", postflop["showdown_quality"])
     _print_river_call_table("River Call / Bluff Catch", postflop["river_calls"])
 
+    river = summary["river"]
+    _print_river_call_table("River Calls By Size", river["river_calls_by_size"])
+    _print_river_call_table("River Calls By Line", river["river_calls_by_line"])
+
     blind_play = summary["blind_play"]
     _print_ev_table("SB First Action EV", blind_play["sb_first_action_ev"])
+    _print_leak_flags(summary["leak_flags"])
 
 
 def _print_rate_table(title: str, rows: list[dict[str, object]]) -> None:
-    table = Table(title, "Position", "Success/Opps", "Pct")
+    table = Table(title, "Spot", "Count/Opps", "Freq", "Net bb", "bb/Opp")
     for row in rows:
+        if row.get("opportunities") == 0:
+            continue
         table.add_row(
             str(row["group"]),
-            str(row["position"]),
-            f"{row['successes']}/{row['opportunities']}",
-            f"{row['pct']}%",
+            _spot_label(row),
+            f"{row.get('count', row.get('successes'))}/{row['opportunities']}",
+            f"{row.get('frequency', row.get('pct'))}%",
+            str(row.get("net_bb", "")),
+            str(row.get("bb_per_opportunity", "")),
         )
     console.print(table)
 
 
 def _print_rate_vs_table(title: str, rows: list[dict[str, object]]) -> None:
-    table = Table(title, "Pos", "Vs Open", "Success/Opps", "Pct")
+    table = Table(title, "Pos", "Vs Open", "Count/Opps", "Freq", "Net bb")
     for row in rows:
+        if row.get("opportunities") == 0:
+            continue
         table.add_row(
             str(row["group"]),
             str(row["position"]),
             str(row["vs_open_position"]),
-            f"{row['successes']}/{row['opportunities']}",
-            f"{row['pct']}%",
+            f"{row.get('count', row.get('successes'))}/{row['opportunities']}",
+            f"{row.get('frequency', row.get('pct'))}%",
+            str(row.get("net_bb", "")),
         )
     console.print(table)
 
 
 def _print_named_rate_table(title: str, rows: list[dict[str, object]]) -> None:
-    table = Table(title, "Stat", "Success/Opps", "Pct")
+    table = Table(title, "Stat", "Count/Opps", "Freq", "Net bb", "bb/Opp")
     for row in rows:
         table.add_row(
             str(row["group"]),
             str(row["stat"]),
-            f"{row['successes']}/{row['opportunities']}",
-            f"{row['pct']}%",
+            f"{row.get('count', row.get('successes'))}/{row['opportunities']}",
+            f"{row.get('frequency', row.get('pct'))}%",
+            str(row.get("net_bb", "")),
+            str(row.get("bb_per_opportunity", "")),
         )
     console.print(table)
 
@@ -853,7 +883,7 @@ def _print_named_rate_table(title: str, rows: list[dict[str, object]]) -> None:
 def _print_river_call_table(title: str, rows: list[dict[str, object]]) -> None:
     table = Table(
         title,
-        "Position",
+        "Spot",
         "Calls",
         "Call bb",
         "Net bb",
@@ -862,11 +892,11 @@ def _print_river_call_table(title: str, rows: list[dict[str, object]]) -> None:
         "Bluff Catch Win",
     )
     for row in rows:
-        if row["position"] != "ALL" and row["calls"] == 0:
+        if row.get("position") != "ALL" and row["calls"] == 0:
             continue
         table.add_row(
             str(row["group"]),
-            str(row["position"]),
+            _spot_label(row),
             str(row["calls"]),
             str(row["total_call_bb"]),
             str(row["total_net_bb"]),
@@ -878,17 +908,87 @@ def _print_river_call_table(title: str, rows: list[dict[str, object]]) -> None:
 
 
 def _print_ev_table(title: str, rows: list[dict[str, object]]) -> None:
-    table = Table(title, "Category", "Hands", "Total bb", "Avg bb", "Profitable")
+    table = Table(title, "Spot", "Hands", "Net bb", "bb/Hand", "bb/100")
     for row in rows:
         table.add_row(
             str(row["group"]),
-            str(row["category"]),
-            str(row["hands"]),
-            str(row["total_net_bb"]),
-            str(row["avg_net_bb"]),
-            f"{row['profitable_pct']}%",
+            _spot_label(row),
+            str(row.get("hands", row.get("count"))),
+            str(row.get("net_bb", row.get("total_net_bb"))),
+            str(row.get("bb_per_hand", row.get("avg_net_bb"))),
+            str(row.get("bb_per_100", "")),
         )
     console.print(table)
+
+
+def _print_frequency_ev_table(title: str, rows: list[dict[str, object]]) -> None:
+    table = Table(title, "Spot", "Hands", "VPIP", "PFR", "3bet", "Net bb", "bb/100")
+    for row in rows:
+        if row.get("hands") == 0:
+            continue
+        table.add_row(
+            str(row["group"]),
+            _spot_label(row),
+            str(row["hands"]),
+            f"{row['vpip_frequency']}%",
+            f"{row['pfr_frequency']}%",
+            f"{row['three_bet_frequency']}%",
+            str(row["net_bb"]),
+            str(row["bb_per_100"]),
+        )
+    console.print(table)
+
+
+def _print_leak_flags(rows: list[dict[str, object]]) -> None:
+    table = Table("Leak Flags", "Priority", "Evidence", "Hand IDs")
+    for row in rows:
+        table.add_row(
+            str(row["flag"]),
+            str(row["priority"]),
+            str(row["evidence"]),
+            ", ".join(str(hand_id) for hand_id in row.get("hand_ids", [])[:8]),
+        )
+    console.print(table)
+
+
+def _spot_label(row: dict[str, object]) -> str:
+    skip = {
+        "group",
+        "opportunities",
+        "count",
+        "successes",
+        "frequency",
+        "pct",
+        "net_bb",
+        "opportunity_net_bb",
+        "bb_per_opportunity",
+        "bb_per_count",
+        "bb_per_hand",
+        "bb_per_100",
+        "hands",
+        "total_net_bb",
+        "avg_net_bb",
+        "profitable_pct",
+        "hand_ids",
+        "opportunity_hand_ids",
+        "sample_warning",
+        "vpip_count",
+        "vpip_frequency",
+        "pfr_count",
+        "pfr_frequency",
+        "vpip_pfr_gap",
+        "three_bet_count",
+        "three_bet_frequency",
+        "calls",
+        "showdown_calls",
+        "winning_showdown_calls",
+        "total_call_bb",
+        "river_call_efficiency",
+        "showdown_net_bb",
+        "bluff_catch_win_pct",
+    }
+    labels = [str(value) for key, value in row.items() if key not in skip and value not in (None, "")]
+    return " / ".join(labels) if labels else "overall"
 
 
 def _print_stats_summary(summary: dict[str, object]) -> None:
