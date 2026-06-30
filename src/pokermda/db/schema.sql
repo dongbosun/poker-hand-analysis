@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS hands (
     played_at TEXT,
     game_type TEXT,
     stake TEXT,
+    stake_level TEXT,
     table_name TEXT,
     table_size INTEGER,
     button_seat INTEGER,

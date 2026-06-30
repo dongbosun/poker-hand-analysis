@@ -11,7 +11,7 @@ from rich.table import Table
 
 from pokermda.config.settings import AppSettings, ensure_dataset_layout, load_settings
 from pokermda.db.connect import connect_database
-from pokermda.db.migrations import apply_schema
+from pokermda.db.migrations import apply_schema, refresh_stake_levels
 from pokermda.exporters.gtowizard_bovada import export_bovada_records
 from pokermda.ingest.bovada_parser import BovadaParser, PARSER_VERSION
 from pokermda.ingest.file_scanner import read_text_with_fallback, scan_hand_history_files
@@ -269,6 +269,7 @@ def ingest(
     ensure_dataset_layout(settings)
     connection = _connection(settings)
     summary = _ingest_raw(settings, connection, source_dir, limit_files, new_only)
+    refresh_stake_levels(connection)
     connection.close()
     _print_summary("Ingest complete", summary)
 
@@ -654,12 +655,13 @@ def nodes_list(config: Path | None = typer.Option(None, "--config", help="Path t
 @stats_app.command("summary")
 def stats_summary(
     config: Path | None = typer.Option(None, "--config", help="Path to local YAML config."),
+    level: str | None = typer.Option(None, "--level", "-l", help="Stake level filter, e.g. NL5 or NL10."),
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
 ) -> None:
     """Print currently supported aggregate poker stats."""
     settings = _settings(config)
     connection = _connection(settings)
-    summary = build_stats_summary(connection)
+    summary = build_stats_summary(connection, level=level)
     connection.close()
 
     if json_output:
@@ -672,12 +674,13 @@ def stats_summary(
 @stats_app.command("edge")
 def stats_edge(
     config: Path | None = typer.Option(None, "--config", help="Path to local YAML config."),
+    level: str | None = typer.Option(None, "--level", "-l", help="Stake level filter, e.g. NL5 or NL10."),
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
 ) -> None:
     """Print edge-oriented stats for preflop, postflop, showdown, river calls, and SB play."""
     settings = _settings(config)
     connection = _connection(settings)
-    summary = build_edge_stats(connection)
+    summary = build_edge_stats(connection, level=level)
     connection.close()
 
     if json_output:
@@ -789,11 +792,24 @@ def _print_profile_table(profile_data: DatabaseProfile) -> None:
         table.add_row(label, str(getattr(profile_data, key)))
     console.print(table)
 
+    level_table = Table("Stake Level", "BB", "Hands", "Participants", "Actions", "Raw Blocks", "Import Files")
+    for row in profile_data.levels:
+        level_table.add_row(
+            row.stake_level,
+            "" if row.bb_amount is None else str(row.bb_amount),
+            str(row.hands),
+            str(row.participants_dealt),
+            str(row.actions),
+            str(row.raw_hand_blocks),
+            str(row.import_files),
+        )
+    console.print(level_table)
+
 
 def _print_edge_stats(summary: dict[str, object]) -> None:
     profile = summary["profile"]
     profile_table = Table("Metric", "Value")
-    for key in ("hands", "participants_dealt", "actions"):
+    for key in ("level", "hands", "participants_dealt", "actions"):
         profile_table.add_row(key, str(profile[key]))
     console.print(profile_table)
 
@@ -994,6 +1010,7 @@ def _spot_label(row: dict[str, object]) -> str:
 def _print_stats_summary(summary: dict[str, object]) -> None:
     profile = summary["profile"]
     profile_table = Table("Metric", "Value")
+    profile_table.add_row("level", str(summary.get("level", "ALL")))
     for key in ("hands", "participants", "actions", "parse_errors", "import_files"):
         profile_table.add_row(key, str(profile[key]))
     console.print(profile_table)

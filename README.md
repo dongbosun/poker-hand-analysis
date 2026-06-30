@@ -158,6 +158,7 @@ pokermda profile
 它会输出：
 
 - DuckDB 里有多少手牌。
+- DuckDB 里按 stake level 拆分的手牌数、participants、actions、raw blocks、import files。
 - bronze raw hand blocks 数量。
 - parse error 数量。
 - Bovada 原始目录里有多少 `.txt` 文件。
@@ -171,13 +172,24 @@ pokermda profile
 pokermda profile --json
 ```
 
+Stake level 由每手牌 posted big blind 派生：
+
+- BB `$0.05` -> `NL5`
+- BB `$0.10` -> `NL10`
+
+旧数据库会在启动命令时自动 backfill `hands.bb_amount` / `hands.sb_amount` / `hands.stake_level`。
+
 ## 当前可运行 Stats
 
 ```bash
 pokermda stats summary
 pokermda stats summary --json
+pokermda stats summary --level NL5
+pokermda stats summary --level NL10
 pokermda stats edge
 pokermda stats edge --json
+pokermda stats edge --level NL5
+pokermda stats edge --level NL10
 ```
 
 当前 stats 定义：

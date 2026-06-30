@@ -65,6 +65,7 @@ def test_full_local_pipeline_with_fixture(tmp_path):
     run_cli(config_path, "status", "imports")
     edge_stats = run_cli(config_path, "stats", "edge", "--json")
     edge_payload = json.loads(edge_stats.stdout)
+    assert edge_payload["profile"]["level"] == "ALL"
     assert edge_payload["profile"]["hands"] == 1
     assert "overall_winrate" in edge_payload["results"]
     assert "winrate_by_position" in edge_payload["position"]
@@ -76,6 +77,18 @@ def test_full_local_pipeline_with_fixture(tmp_path):
     assert "sb_first_action_ev" in edge_payload["blind_play"]
     assert "starting_hand_matrix" in edge_payload["hand_classes"]
     assert "leak_flags" in edge_payload
+    edge_nl5 = json.loads(run_cli(config_path, "stats", "edge", "--level", "NL5", "--json").stdout)
+    assert edge_nl5["profile"]["level"] == "NL5"
+    assert edge_nl5["profile"]["hands"] == 1
+    edge_nl10 = json.loads(run_cli(config_path, "stats", "edge", "--level", "NL10", "--json").stdout)
+    assert edge_nl10["profile"]["level"] == "NL10"
+    assert edge_nl10["profile"]["hands"] == 0
+    summary_nl5 = json.loads(run_cli(config_path, "stats", "summary", "--level", "5", "--json").stdout)
+    assert summary_nl5["level"] == "NL5"
+    assert summary_nl5["profile"]["hands"] == 1
+    profile_payload = json.loads(run_cli(config_path, "profile", "--json").stdout)
+    assert profile_payload["levels"][0]["stake_level"] == "NL5"
+    assert profile_payload["levels"][0]["hands"] == 1
 
     run_cli(config_path, "queue-review", "--top", "1")
     export = run_cli(config_path, "export-gtowizard", "--limit", "1")

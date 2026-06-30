@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from pokermda.features.stake_levels import normalize_stake_level
+
 
 POSITION_ORDER = ["UTG", "MP", "CO", "BTN", "SB", "BB", "UNKNOWN"]
 NON_BB_POSITION_ORDER = ["UTG", "MP", "CO", "BTN", "SB", "UNKNOWN"]
@@ -228,11 +230,12 @@ class FrequencyEvCounter:
         }
 
 
-def build_edge_stats(connection) -> dict[str, Any]:
+def build_edge_stats(connection, level: str | None = None) -> dict[str, Any]:
     """Build edge-oriented stats from currently normalized Bovada actions."""
-    participants = _load_participants(connection)
-    actions = _load_actions(connection)
-    hands = _load_hands(connection)
+    normalized_level = normalize_stake_level(level)
+    participants = _load_participants(connection, normalized_level)
+    actions = _load_actions(connection, normalized_level)
+    hands = _load_hands(connection, normalized_level)
 
     participants_by_hand: dict[str, list[ParticipantRow]] = {}
     participant_by_actor: dict[str, dict[str, ParticipantRow]] = {}
@@ -313,16 +316,26 @@ def build_edge_stats(connection) -> dict[str, Any]:
             pot_before_by_action=pot_before_by_action,
         )
 
-    return _build_output(context, hands=len(hands), participants=len(participants), actions=len(actions))
+    return _build_output(
+        context,
+        level=normalized_level,
+        hands=len(hands),
+        participants=len(participants),
+        actions=len(actions),
+    )
 
 
-def _load_participants(connection) -> list[ParticipantRow]:
+def _load_participants(connection, level: str | None) -> list[ParticipantRow]:
+    level_join = _level_join_sql(level, "p")
+    level_where = _level_where_sql(level)
     rows = connection.execute(
-        """
-        SELECT participant_id, hand_id, player_name_raw, position, is_hero, hole_cards, stack
-        FROM participants
-        WHERE hole_cards IS NOT NULL
-        ORDER BY hand_id, seat_no
+        f"""
+        SELECT p.participant_id, p.hand_id, p.player_name_raw, p.position, p.is_hero, p.hole_cards, p.stack
+        FROM participants p
+        {level_join}
+        WHERE p.hole_cards IS NOT NULL
+        {level_where}
+        ORDER BY p.hand_id, p.seat_no
         """
     ).fetchall()
     return [
@@ -340,12 +353,16 @@ def _load_participants(connection) -> list[ParticipantRow]:
     ]
 
 
-def _load_actions(connection) -> list[ActionRow]:
+def _load_actions(connection, level: str | None) -> list[ActionRow]:
+    level_join = _level_join_sql(level, "a")
+    level_where = _level_where_sql(level)
     rows = connection.execute(
-        """
-        SELECT hand_id, action_no_global, street, actor, action_type, amount, raise_to, raw_line
-        FROM actions
-        ORDER BY hand_id, action_no_global
+        f"""
+        SELECT a.hand_id, a.action_no_global, a.street, a.actor, a.action_type, a.amount, a.raise_to, a.raw_line
+        FROM actions a
+        {level_join}
+        {level_where}
+        ORDER BY a.hand_id, a.action_no_global
         """
     ).fetchall()
     return [
@@ -363,14 +380,17 @@ def _load_actions(connection) -> list[ActionRow]:
     ]
 
 
-def _load_hands(connection) -> dict[str, dict[str, Any]]:
+def _load_hands(connection, level: str | None) -> dict[str, dict[str, Any]]:
+    level_where = _level_where_sql(level, alias="h", prefix="WHERE")
     rows = connection.execute(
-        """
+        f"""
         SELECT h.hand_id, h.board_flop, h.board_turn, h.board_river, h.board,
                h.import_file_id, h.table_size, h.played_at,
-               COALESCE(i.raw_file_path, i.source_path) AS raw_file_path
+               COALESCE(i.raw_file_path, i.source_path) AS raw_file_path,
+               h.stake_level
         FROM hands h
         LEFT JOIN import_files i ON h.import_file_id = i.import_file_id
+        {level_where}
         """
     ).fetchall()
     return {
@@ -383,6 +403,7 @@ def _load_hands(connection) -> dict[str, dict[str, Any]]:
             "table_size": row[6],
             "played_at": row[7],
             "raw_file_path": row[8],
+            "stake_level": row[9],
         }
         for row in rows
     }
@@ -391,6 +412,7 @@ def _load_hands(connection) -> dict[str, dict[str, Any]]:
 def _build_output(
     context: dict[str, Any],
     *,
+    level: str | None,
     hands: int,
     participants: int,
     actions: int,
@@ -398,6 +420,7 @@ def _build_output(
     return {
         "definitions": _definitions(),
         "profile": {
+            "level": level or "ALL",
             "hands": hands,
             "participants_dealt": participants,
             "actions": actions,
@@ -1487,6 +1510,18 @@ def _normalize_position(position: str | None) -> str:
         "UTG+2": "CO",
     }
     return mapping.get(clean, clean)
+
+
+def _level_join_sql(level: str | None, source_alias: str) -> str:
+    if level is None:
+        return ""
+    return f"JOIN hands h ON h.hand_id = {source_alias}.hand_id"
+
+
+def _level_where_sql(level: str | None, prefix: str = "AND", alias: str = "h") -> str:
+    if level is None:
+        return ""
+    return f"{prefix} {alias}.stake_level = '{level}'"
 
 
 def _pot_before_by_action(actions: list[ActionRow], hand_bb: float) -> dict[int, float]:

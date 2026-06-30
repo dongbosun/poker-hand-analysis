@@ -5,8 +5,9 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from pokermda.features.stake_levels import normalize_stake_level
 
-SEAT_FLAGS_CTE = r"""
+SEAT_FLAGS_CTE_TEMPLATE = r"""
 WITH seat_base AS (
     SELECT
         p.hand_id,
@@ -18,7 +19,9 @@ WITH seat_base AS (
         p.hole_cards,
         p.net_result
     FROM participants p
+    JOIN hands h ON h.hand_id = p.hand_id
     WHERE p.hole_cards IS NOT NULL
+      {level_filter}
 ), flags AS (
     SELECT
         sb.*,
@@ -99,9 +102,9 @@ CASE position_label
 END
 """
 
-
-def build_stats_summary(connection) -> dict[str, Any]:
+def build_stats_summary(connection, level: str | None = None) -> dict[str, Any]:
     """Build the stats that the current normalized schema can support reliably."""
+    normalized_level = normalize_stake_level(level)
     return {
         "definitions": {
             "vpip": "Seat was dealt cards and made a voluntary preflop call/raise/bet/all-in. Blinds, posts chip, ante, and straddle are excluded.",
@@ -109,25 +112,38 @@ def build_stats_summary(connection) -> dict[str, Any]:
             "pool": "All non-hero seats in the Bovada anonymous data, aggregated as a population sample.",
             "collected": "Any hand result/collected action. This is not net profit or bb/100.",
         },
-        "profile": _profile(connection),
-        "core": _core_stats(connection),
-        "hero_by_position": _position_stats(connection, is_hero=True),
-        "pool_by_position": _position_stats(connection, is_hero=False),
-        "action_type_counts": _action_type_counts(connection),
-        "street_action_counts": _street_action_counts(connection),
-        "hand_runouts": _hand_runouts(connection),
-        "preflop_raise_count_per_hand": _preflop_raise_count_per_hand(connection),
+        "level": normalized_level or "ALL",
+        "profile": _profile(connection, normalized_level),
+        "core": _core_stats(connection, normalized_level),
+        "hero_by_position": _position_stats(connection, is_hero=True, level=normalized_level),
+        "pool_by_position": _position_stats(connection, is_hero=False, level=normalized_level),
+        "action_type_counts": _action_type_counts(connection, normalized_level),
+        "street_action_counts": _street_action_counts(connection, normalized_level),
+        "hand_runouts": _hand_runouts(connection, normalized_level),
+        "preflop_raise_count_per_hand": _preflop_raise_count_per_hand(connection, normalized_level),
     }
 
 
-def _profile(connection) -> dict[str, int]:
-    tables = ["hands", "participants", "actions", "parse_errors", "import_files"]
-    return {table: _count(connection, table) for table in tables}
+def _seat_flags_cte(level: str | None) -> str:
+    return SEAT_FLAGS_CTE_TEMPLATE.format(level_filter=_level_filter_sql("h", level))
 
 
-def _core_stats(connection) -> list[dict[str, Any]]:
+def _profile(connection, level: str | None) -> dict[str, int]:
+    if level is None:
+        tables = ["hands", "participants", "actions", "parse_errors", "import_files"]
+        return {table: _count(connection, table) for table in tables}
+    return {
+        "hands": _count_where(connection, "hands", f"stake_level = '{level}'"),
+        "participants": _count_joined_to_hands(connection, "participants", level),
+        "actions": _count_joined_to_hands(connection, "actions", level),
+        "parse_errors": _count(connection, "parse_errors"),
+        "import_files": _count(connection, "import_files"),
+    }
+
+
+def _core_stats(connection, level: str | None) -> list[dict[str, Any]]:
     rows = connection.execute(
-        SEAT_FLAGS_CTE
+        _seat_flags_cte(level)
         + """
         SELECT
             CASE WHEN is_hero THEN 'hero' ELSE 'pool_non_hero' END AS group_name,
@@ -182,9 +198,9 @@ def _enrich_core_row(row: dict[str, Any]) -> dict[str, Any]:
     return row
 
 
-def _position_stats(connection, is_hero: bool) -> list[dict[str, Any]]:
+def _position_stats(connection, is_hero: bool, level: str | None) -> list[dict[str, Any]]:
     rows = connection.execute(
-        SEAT_FLAGS_CTE
+        _seat_flags_cte(level)
         + f"""
         SELECT
             position_label,
@@ -220,14 +236,18 @@ def _position_stats(connection, is_hero: bool) -> list[dict[str, Any]]:
     return [dict(zip(keys, row, strict=True)) for row in rows]
 
 
-def _action_type_counts(connection) -> list[dict[str, Any]]:
+def _action_type_counts(connection, level: str | None) -> list[dict[str, Any]]:
+    level_join = _level_join_sql(level)
+    level_where = _level_where_sql(level, prefix="WHERE", alias="h")
     rows = connection.execute(
-        """
+        f"""
         SELECT
             action_type,
             COUNT(*) AS count,
-            ROUND(100.0 * COUNT(*) / (SELECT COUNT(*) FROM actions), 1) AS pct
+            ROUND(100.0 * COUNT(*) / (SELECT COUNT(*) FROM actions a2 {_level_join_sql(level, 'a2')} {_level_where_sql(level, 'WHERE', 'h2')}), 1) AS pct
         FROM actions
+        {level_join}
+        {level_where}
         GROUP BY 1
         ORDER BY count DESC
         """
@@ -235,11 +255,15 @@ def _action_type_counts(connection) -> list[dict[str, Any]]:
     return [{"action_type": row[0], "count": row[1], "pct": row[2]} for row in rows]
 
 
-def _street_action_counts(connection) -> list[dict[str, Any]]:
+def _street_action_counts(connection, level: str | None) -> list[dict[str, Any]]:
+    level_join = _level_join_sql(level)
+    level_where = _level_where_sql(level, prefix="WHERE", alias="h")
     rows = connection.execute(
-        """
-        SELECT street, COUNT(*) AS actions, COUNT(DISTINCT hand_id) AS hands_with_action
+        f"""
+        SELECT street, COUNT(*) AS actions, COUNT(DISTINCT actions.hand_id) AS hands_with_action
         FROM actions
+        {level_join}
+        {level_where}
         GROUP BY 1
         ORDER BY CASE street
             WHEN 'preflop' THEN 1
@@ -253,9 +277,10 @@ def _street_action_counts(connection) -> list[dict[str, Any]]:
     return [{"street": row[0], "actions": row[1], "hands_with_action": row[2]} for row in rows]
 
 
-def _hand_runouts(connection) -> list[dict[str, Any]]:
+def _hand_runouts(connection, level: str | None) -> list[dict[str, Any]]:
+    level_where = _level_where_sql(level, prefix="WHERE", alias="")
     rows = connection.execute(
-        """
+        f"""
         SELECT
             CASE
                 WHEN board IS NULL THEN 'preflop_only'
@@ -265,8 +290,9 @@ def _hand_runouts(connection) -> list[dict[str, Any]]:
                 ELSE 'unknown'
             END AS runout,
             COUNT(*) AS hands,
-            ROUND(100.0 * COUNT(*) / (SELECT COUNT(*) FROM hands), 1) AS pct
+            ROUND(100.0 * COUNT(*) / (SELECT COUNT(*) FROM hands {_level_where_sql(level, prefix='WHERE', alias='')}), 1) AS pct
         FROM hands
+        {level_where}
         GROUP BY 1
         ORDER BY hands DESC
         """
@@ -274,9 +300,10 @@ def _hand_runouts(connection) -> list[dict[str, Any]]:
     return [{"runout": row[0], "hands": row[1], "pct": row[2]} for row in rows]
 
 
-def _preflop_raise_count_per_hand(connection) -> list[dict[str, Any]]:
+def _preflop_raise_count_per_hand(connection, level: str | None) -> list[dict[str, Any]]:
+    level_where = _level_where_sql(level, prefix="WHERE", alias="h")
     rows = connection.execute(
-        """
+        f"""
         WITH r AS (
             SELECT hand_id, COUNT(*) AS raises
             FROM actions
@@ -286,9 +313,10 @@ def _preflop_raise_count_per_hand(connection) -> list[dict[str, Any]]:
         SELECT
             COALESCE(raises, 0) AS preflop_raises,
             COUNT(*) AS hands,
-            ROUND(100.0 * COUNT(*) / (SELECT COUNT(*) FROM hands), 1) AS pct
+            ROUND(100.0 * COUNT(*) / (SELECT COUNT(*) FROM hands h2 {_level_where_sql(level, prefix='WHERE', alias='h2')}), 1) AS pct
         FROM hands h
         LEFT JOIN r USING(hand_id)
+        {level_where}
         GROUP BY 1
         ORDER BY 1
         """
@@ -298,6 +326,42 @@ def _preflop_raise_count_per_hand(connection) -> list[dict[str, Any]]:
 
 def _count(connection, table_name: str) -> int:
     return int(connection.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0])
+
+
+def _count_where(connection, table_name: str, where_sql: str) -> int:
+    return int(connection.execute(f"SELECT COUNT(*) FROM {table_name} WHERE {where_sql}").fetchone()[0])
+
+
+def _count_joined_to_hands(connection, table_name: str, level: str) -> int:
+    return int(
+        connection.execute(
+            f"""
+            SELECT COUNT(*)
+            FROM {table_name} t
+            JOIN hands h ON h.hand_id = t.hand_id
+            WHERE h.stake_level = ?
+            """,
+            [level],
+        ).fetchone()[0]
+    )
+
+
+def _level_filter_sql(alias: str, level: str | None) -> str:
+    return "" if level is None else f"AND {alias}.stake_level = '{level}'"
+
+
+def _level_join_sql(level: str | None, action_alias: str = "actions") -> str:
+    if level is None:
+        return ""
+    hand_alias = "h2" if action_alias == "a2" else "h"
+    return f"JOIN hands {hand_alias} ON {hand_alias}.hand_id = {action_alias}.hand_id"
+
+
+def _level_where_sql(level: str | None, prefix: str = "AND", alias: str | None = None) -> str:
+    if level is None:
+        return ""
+    qualifier = "" if alias == "" else f"{alias or 'h'}."
+    return f"{prefix} {qualifier}stake_level = '{level}'"
 
 
 def _pct(numerator: int | float, denominator: int | float) -> float:
@@ -312,4 +376,3 @@ def _wilson_interval_percent(successes: int, trials: int, z: float = 1.96) -> tu
     center = (p + z * z / (2 * trials)) / denom
     margin = z * math.sqrt((p * (1 - p) + z * z / (4 * trials)) / trials) / denom
     return round(100 * max(0.0, center - margin), 1), round(100 * min(1.0, center + margin), 1)
-
